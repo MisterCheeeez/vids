@@ -1,71 +1,101 @@
--- Enhanced Fly Script for Roblox
--- Fixes movement issues and notification spam
+-- Pure server-side infinite jump
+-- Place in ServerScriptService
 
-local player = game:GetService("Players").LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local torso = character:WaitForChild("HumanoidRootPart")
+local Players = game:GetService("Players")
+local JumpDebounce = 0.2 -- Prevent jump spamming
 
-local flying = false
-local flySpeed = 50
-local flyKey = Enum.KeyCode.E
-local lastNotificationTime = 0
-local notificationCooldown = 3 -- seconds between notifications
+-- Configuration
+local JUMP_POWER_MULTIPLIER = 1.5
+local MAX_JUMP_TIME = 1 -- Seconds before auto-disable
 
--- Function to show notifications with cooldown
-local function showNotification(title, text)
-    local currentTime = tick()
-    if currentTime - lastNotificationTime >= notificationCooldown then
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = 3
-        })
-        lastNotificationTime = currentTime
-    end
+local playerStates = {}
+
+local function enableInfiniteJump(player)
+    local state = playerStates[player]
+    if not state or state.enabled then return end
+    
+    state.enabled = true
+    local humanoid = state.humanoid
+    state.originalJumpPower = humanoid.JumpPower
+    humanoid.JumpPower = state.originalJumpPower * JUMP_POWER_MULTIPLIER
+    
+    -- Notify player through chat
+    player:SendSystemMessage("Infinite Jump: ON (Auto-disables after "..MAX_JUMP_TIME.."s)")
+    
+    -- Auto-disable after time limit
+    state.jumpEndTime = os.time() + MAX_JUMP_TIME
 end
 
--- Function to enable flying
-local function enableFlying()
-    if flying then return end
+local function disableInfiniteJump(player)
+    local state = playerStates[player]
+    if not state or not state.enabled then return end
     
-    flying = true
-    humanoid.PlatformStand = true
-    
-    -- Create flight controls
-    local bg = Instance.new("BodyGyro")
-    bg.Name = "FlyGyro"
-    bg.P = 10000
-    bg.maxTorque = Vector3.new(9e9, 9e9, 9e9)
-    bg.cframe = torso.CFrame
-    bg.Parent = torso
-    
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "FlyVelocity"
-    bv.velocity = Vector3.new(0, 0.1, 0) -- Small upward velocity to prevent falling
-    bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
-    bv.Parent = torso
-    
-    -- Store the original walkspeed
-    if not humanoid:FindFirstChild("OriginalWalkSpeed") then
-        local originalWalkSpeed = Instance.new("NumberValue")
-        originalWalkSpeed.Name = "OriginalWalkSpeed"
-        originalWalkSpeed.Value = humanoid.WalkSpeed
-        originalWalkSpeed.Parent = humanoid
+    state.enabled = false
+    local humanoid = state.humanoid
+    if state.originalJumpPower then
+        humanoid.JumpPower = state.originalJumpPower
     end
     
-    -- Control flying with WASD and Space/Shift
-    local userInputService = game:GetService("UserInputService")
-    local connection
+    -- Notify player through chat
+    player:SendSystemMessage("Infinite Jump: OFF")
+end
+
+local function onCharacterAdded(player, character)
+    local humanoid = character:WaitForChild("Humanoid")
     
-    connection = userInputService.InputChanged:Connect(function(input)
-        if not flying then 
-            connection:Disconnect()
-            return 
+    playerStates[player] = {
+        humanoid = humanoid,
+        enabled = false,
+        lastJumpTime = 0,
+        jumpEndTime = 0
+    }
+    
+    -- Detect jumping state
+    humanoid.StateChanged:Connect(function(oldState, newState)
+        local state = playerStates[player]
+        if not state then return end
+        
+        local currentTime = os.time()
+        
+        -- Detect when player starts jumping
+        if newState == Enum.HumanoidStateType.Jumping then
+            if currentTime - state.lastJumpTime > JumpDebounce then
+                state.lastJumpTime = currentTime
+                enableInfiniteJump(player)
+            end
         end
         
-        if input.UserInputType == Enum.UserInputType.Keyboard then
-            local direction = Vector3.new(0, 0, 0)
-            
-            if userInputService:IsKeyDown(Enum.KeyCode.W) then
-                direction = direction + (torso
+        -- Detect when player lands
+        if newState == Enum.HumanoidStateType.Landed then
+            if state.enabled and currentTime >= state.jumpEndTime then
+                disableInfiniteJump(player)
+            end
+        end
+    end)
+    
+    -- Clean up when character dies
+    humanoid.Died:Connect(function()
+        disableInfiniteJump(player)
+    end)
+end
+
+local function onPlayerAdded(player)
+    player.CharacterAdded:Connect(function(character)
+        onCharacterAdded(player, character)
+    end)
+    
+    if player.Character then
+        onCharacterAdded(player, player.Character)
+    end
+    
+    -- Clean up when player leaves
+    player.PlayerRemoving:Connect(function()
+        playerStates[player] = nil
+    end)
+end
+
+-- Initialize for all players
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, player in ipairs(Players:GetPlayers()) do
+    onPlayerAdded(player)
+end
