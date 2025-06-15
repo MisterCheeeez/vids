@@ -1,5 +1,5 @@
--- Fly Script for Roblox
--- Put this in a LocalScript or add to your Script Hub
+-- Enhanced Fly Script for Roblox
+-- Fixes movement issues and notification spam
 
 local player = game:GetService("Players").LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -8,7 +8,22 @@ local torso = character:WaitForChild("HumanoidRootPart")
 
 local flying = false
 local flySpeed = 50
-local flyKey = Enum.KeyCode.E -- Change this to your preferred activation key
+local flyKey = Enum.KeyCode.E
+local lastNotificationTime = 0
+local notificationCooldown = 3 -- seconds between notifications
+
+-- Function to show notifications with cooldown
+local function showNotification(title, text)
+    local currentTime = tick()
+    if currentTime - lastNotificationTime >= notificationCooldown then
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 3
+        })
+        lastNotificationTime = currentTime
+    end
+end
 
 -- Function to enable flying
 local function enableFlying()
@@ -17,6 +32,7 @@ local function enableFlying()
     flying = true
     humanoid.PlatformStand = true
     
+    -- Create flight controls
     local bg = Instance.new("BodyGyro")
     bg.Name = "FlyGyro"
     bg.P = 10000
@@ -26,9 +42,17 @@ local function enableFlying()
     
     local bv = Instance.new("BodyVelocity")
     bv.Name = "FlyVelocity"
-    bv.velocity = Vector3.new(0, 0, 0)
+    bv.velocity = Vector3.new(0, 0.1, 0) -- Small upward velocity to prevent falling
     bv.maxForce = Vector3.new(9e9, 9e9, 9e9)
     bv.Parent = torso
+    
+    -- Store the original walkspeed
+    if not humanoid:FindFirstChild("OriginalWalkSpeed") then
+        local originalWalkSpeed = Instance.new("NumberValue")
+        originalWalkSpeed.Name = "OriginalWalkSpeed"
+        originalWalkSpeed.Value = humanoid.WalkSpeed
+        originalWalkSpeed.Parent = humanoid
+    end
     
     -- Control flying with WASD and Space/Shift
     local userInputService = game:GetService("UserInputService")
@@ -44,75 +68,4 @@ local function enableFlying()
             local direction = Vector3.new(0, 0, 0)
             
             if userInputService:IsKeyDown(Enum.KeyCode.W) then
-                direction = direction + (torso.CFrame.LookVector * flySpeed)
-            end
-            if userInputService:IsKeyDown(Enum.KeyCode.S) then
-                direction = direction + (torso.CFrame.LookVector * -flySpeed)
-            end
-            if userInputService:IsKeyDown(Enum.KeyCode.A) then
-                direction = direction + (torso.CFrame.RightVector * -flySpeed)
-            end
-            if userInputService:IsKeyDown(Enum.KeyCode.D) then
-                direction = direction + (torso.CFrame.RightVector * flySpeed)
-            end
-            if userInputService:IsKeyDown(Enum.KeyCode.Space) then
-                direction = direction + (Vector3.new(0, flySpeed, 0))
-            end
-            if userInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-                direction = direction + (Vector3.new(0, -flySpeed, 0))
-            end
-            
-            bv.velocity = direction
-            bg.cframe = torso.CFrame
-        end
-    end)
-    
-    -- Notify player
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Fly Enabled",
-        Text = "Press "..tostring(flyKey).." to disable. WASD+Space/Shift to move.",
-        Duration = 5
-    })
-end
-
--- Function to disable flying
-local function disableFlying()
-    if not flying then return end
-    
-    flying = false
-    humanoid.PlatformStand = false
-    
-    if torso:FindFirstChild("FlyGyro") then
-        torso.FlyGyro:Destroy()
-    end
-    
-    if torso:FindFirstChild("FlyVelocity") then
-        torso.FlyVelocity:Destroy()
-    end
-    
-    -- Notify player
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Fly Disabled",
-        Text = "Press "..tostring(flyKey).." to enable flying again.",
-        Duration = 5
-    })
-end
-
--- Toggle flying with the flyKey
-game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed and input.KeyCode == flyKey then
-        if flying then
-            disableFlying()
-        else
-            enableFlying()
-        end
-    end
-end)
-
--- Clean up when character respawns
-player.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    humanoid = character:WaitForChild("Humanoid")
-    torso = character:WaitForChild("HumanoidRootPart")
-    disableFlying()
-end)
+                direction = direction + (torso
